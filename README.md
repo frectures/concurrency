@@ -295,6 +295,8 @@ What happens if two threads try to increment `id` at (roughly) the same time?
 
 ![](img/race.svg)
 
+* Only one thread at a time can enter a synchronized block (or method) guarded by the same monitor
+
 ### Visibility
 
 What happens if two threads try to increment `id` *after* one another?
@@ -319,6 +321,19 @@ public class UniqueIdGenerator {
     }
 }
 ```
+
+![](img/visibility-monitor.svg)
+
+* *All* writes in Thread #1 before a `monitorexit` become visible to Thread #2 after a `monitorenter` on the same monitor
+* The visibility is *not* affected by:
+  * The `monitorenter` in Thread #1
+  * The `monitorexit` in Thead #2
+
+## Synchronized methods
+
+* A `synchronized` method behaves like a method consisting of a `synchronized (this)` block
+  * Synchronizing on `this` allows clients to participate in the synchronization policy
+* A `static synchronized` method behaves like a `static` method consisting of a `synchronized (The.class)` block
 
 ## Spin locks
 
