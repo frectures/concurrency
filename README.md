@@ -343,9 +343,8 @@ Can you see how the following program is broken?
 public class Spinner {
     public static void main(String[] args) {
         Spinner spinner = new Spinner();
-        new Thread(spinner::calculate).start();
-        spinner.spin();
-        spinner.print();
+        new Thread(spinner::spin).start();
+        spinner.calculate();
     }
 
     private int[] squares;
@@ -357,15 +356,13 @@ public class Spinner {
         done = true;
     }
 
-    private void spin() {
-        int spinning = 0;
+    public void spin() {
+        System.out.println("Entering spin loop!");
+        int spins = 0;
         while (!done) {
-            ++spinning;
+            ++spins;
         }
-        System.out.println("Spinlock span " + spinning + " times!");
-    }
-
-    private void print() {
+        System.out.println("Spinlock span " + spins + " times!");
         IntStream.of(squares).limit(11).forEach(System.out::println);
     }
 }
@@ -382,10 +379,12 @@ The simplest solution is to mark `done` with `volatile`:
     private volatile boolean done;
 ```
 
+![](img/visibility-volatile.svg)
+
 Writing to a `volatile` variable *v* from Thread #1
 and then reading from the same `volatile` variable *v* from Thread #2
-has the same visibility guarantees as leaving a synchronized block guarded by a lock *k* in Thread #1
-and then entering a synchronized block guarded by the same lock *k* in Thread #2.
+has the same visibility guarantees as leaving a synchronized block guarded by a monitor *m* in Thread #1
+and then entering a synchronized block guarded by the same monitor *m* in Thread #2.
 
 > A program that omits needed synchronization might appear to work, passing its tests and performing well for years, but it is still broken and may fail at any moment. [JCIP]
 
