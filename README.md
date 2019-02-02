@@ -426,6 +426,8 @@ public class UniqueIdGenerator {
 
 *demonstrate WorldPanel*
 
+![](img/karel.svg)
+
 ## Collections
 
 ### Synchronized collections
