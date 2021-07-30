@@ -1,0 +1,12 @@
+# /img/*.svg
+/*.html
+/*.pdf
+
+/target/
+
+/.project
+/.classpath
+/.settings/
+
+/.idea/
+/*.iml
