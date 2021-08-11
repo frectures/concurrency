@@ -32,7 +32,7 @@ public class Mandelbrot {
             frame.setExtendedState(frame.getExtendedState() | JFrame.MAXIMIZED_BOTH);
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-            calculateWithMeasurement();
+            measureCalculation();
         });
     }
 
@@ -51,17 +51,17 @@ public class Mandelbrot {
                     top = (event.getY() - HEIGHT) * zoom + top;
                     zoom = zoom * 2.0;
                 }
-                calculateWithMeasurement();
+                measureCalculation();
             }
         };
     }
 
-    private static void calculateWithMeasurement() {
+    private static void measureCalculation() {
         long before = System.nanoTime();
         calculate();
         long after = System.nanoTime();
         long delta = after - before;
-        double seconds = delta / 1_000_000_000.0;
+        double seconds = delta / 1e9;
         System.out.println(seconds + " seconds");
     }
 
