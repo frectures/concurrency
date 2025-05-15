@@ -8,7 +8,7 @@ public class Benchmark {
     private static final long MILLISECONDS_PER_NANOSECOND = 1_000_000;
 
     private final String description;
-    private long[] measurements;
+    private final long[] measurements;
     private int countMeasurements;
 
     public Benchmark(String description) {

@@ -6,10 +6,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 @RestController
-@RequestMapping("books")
+@RequestMapping("/books")
 public class BookController {
 
-    private List<Book> books = new ArrayList<>();
+    private final List<Book> books = new ArrayList<>();
 
     public BookController() {
         books.add(new Book("Effective Java", "Joshua Bloch", 2017));
@@ -21,10 +21,9 @@ public class BookController {
         return books;
     }
 
-    @GetMapping("{index}")
+    @GetMapping("/{index}")
     public Book getBookAt(@PathVariable("index") int index) {
-        Book book = books.get(index);
-        return book;
+        return books.get(index);
     }
 
     @PostMapping
