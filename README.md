@@ -15,10 +15,7 @@
    - `volatile`
    - Atomic variables
    - Collections
-   - Explicit locks
 5. Bonus
-   - `ThreadLocal`
-   - Custom thread pool
    - Diving deeper
 
 # Threads
@@ -73,14 +70,14 @@ public class Thread implements Runnable {
 
 ```java
 Runnable task = () -> {
-    // ... work to be done in parallel ...
+    // ... work to be done concurrently ...
 };
 Thread thread = new Thread(task);
-thread.start(); // start parallel work
+thread.start(); // start concurrent work
 
 // ... continue working in current thread ...
 
-thread.join();  // wait for parallel work to finish
+thread.join();  // wait for concurrent work to finish
 ```
 
 # Data parallelism
@@ -238,9 +235,16 @@ class MyAction extends RecursiveAction {
 ## Executors
 
 ```java
-private ExecutorService single = Executors.newSingleThreadExecutor();
-private ExecutorService fixed  = Executors.newFixedThreadPool(8);
-private ExecutorService cached = Executors.newCachedThreadPool();
+private ExecutorService single  = Executors.newSingleThreadExecutor();
+private ExecutorService fixed   = Executors.newFixedThreadPool(8);
+private ExecutorService cached  = Executors.newCachedThreadPool();
+
+/**
+ * Creates an Executor that starts a new virtual Thread for each task.
+ * The number of threads created by the Executor is unbounded.
+ * @since 21
+ */
+private ExecutorService virtual = Executors.newVirtualThreadPerTaskExecutor();
 
 // ...
 
@@ -343,15 +347,27 @@ class LabyrinthGenerator implements Callable<Labyrinth> {
 - A `CompletableFuture` can trigger a callback on completion (push)
 
 ```java
-CompletableFuture.supplyAsync(someHttpCall)
-                 .thenAccept(handleResult)
-                 .exceptionally(handleException);
+// ...
+var future = client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+
+future.thenAccept(response -> {
+    // ...
+}).exceptionally(throwable -> {
+    // ...
+});
 ```
 
 - Harder to write and debug than ordinary, synchronous code
 - No plans for `async`/`await` syntax sugar as in C# or JavaScript
-- [Project Loom](https://wiki.openjdk.java.net/display/loom/Main) will probably make asynchronous APIs largely redundant
-  - Fibers = lightweight/virtual threads
+- [Virtual Threads](https://openjdk.org/jeps/444) made asynchronous APIs largely redundant
+
+```java
+Thread.startVirtualThread(() -> {
+    // ...
+    var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    // ...
+});
+```
 
 # Synchronization
 
@@ -622,6 +638,32 @@ public class UniqueIdGenerator {
   - `AtomicBoolean`
   - `AtomicReference`
 
+## Deadlocks
+
+- Classic deadlock scenario:
+  - Thread A acquires lock 1
+  - Thread B acquires lock 2
+  - Thread A waits for lock 2
+  - Thread B waits for lock 1
+  - Program hangs forever
+  - see `Philosopher.java`
+- How do we prevent deadlocks?
+  - globally consistent lock acquisition order
+
+> ### Multithreaded toolkits: A failed dream? (2004)
+>
+> From observation, there seems to be an amazing tendency  
+> towards deadlocks and race conditions in multithreaded GUIs.
+>
+> [...] It seems like the obvious right thing to do in a multithreaded environment.  
+> Any random thread should be able to update the GUI state of buttons, text fields, etc.  
+> It's just a matter of having a few locks, what can be so hard?
+>
+> [...] And unfortunately we have the classic lock ordering nightmare:  
+> we have two different kinds of activities going on  
+> that want to acquire locks in opposite orders.  
+> So deadlock is almost inevitable.
+
 ## Collections
 
 ### Synchronized collections
@@ -764,10 +806,7 @@ default V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunctio
 ### Exercise
 
 - Open the `MobyDick` class and study the `main` method
-  - It prints the first 23 lines of the novel
-- Count the frequencies of words (case-insensitive) in the `countWords` method
-  - The `regexTutorial` method demonstrates efficient word extraction
-  - The `MobyDickTest` class checks whether the 12 most frequent words are counted correctly
+- Count the frequencies of words
 - Can you increase the performance with parallel streams?
 
 ### Blocking queues
@@ -779,130 +818,9 @@ default V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunctio
 - `BlockingDeque`
   - `LinkedBlockingDeque`
 
-*demonstrate MainFrame*
-
-## Explicit locks
-
-- `synchronized` blocks implicitly lock and unlock
-- Explicit locks offer finer-grained control over locking behavior
-
-### ReadWriteLock
-
-- A `ReadWriteLock` can be locked by one writer or *multiple* readers
-
-*live coding*
+*demonstrate skorbut.MainFrame*
 
 # Bonus
-
-## ThreadLocal
-
-Consider the following code:
-
-```java
-public class NumberFormatter {
-    public static String format(double number) {
-        DecimalFormat numberFormat = new DecimalFormat();
-
-        numberFormat.setDecimalFormatSymbols(new DecimalFormatSymbols(Locale.GERMAN));
-        numberFormat.setMinimumFractionDigits(2);
-        numberFormat.setMaximumFractionDigits(2);
-        numberFormat.setGroupingUsed(false);
-
-        return numberFormat.format(number);
-    }
-}
-```
-
-Is the following refactoring legal?
-
-```java
-public class NumberFormatter {
-    private static final DecimalFormat numberFormat;
-
-    static {
-        numberFormat = new DecimalFormat();
-        numberFormat.setDecimalFormatSymbols(new DecimalFormatSymbols(Locale.GERMAN));
-        numberFormat.setMinimumFractionDigits(2);
-        numberFormat.setMaximumFractionDigits(2);
-        numberFormat.setGroupingUsed(false);
-    }
-
-    public static String format(double number) {
-        return numberFormat.format(number);
-    }
-}
-```
-
-Buried inside 327 lines of `NumberFormat` class documentation:
-
-> Decimal formats are generally not synchronized.
->
-> **It is recommended to create separate format instances for each thread.**
->
-> If multiple threads access a format concurrently, it must be synchronized externally.
-
-That's where `java.lang.ThreadLocal` comes in:
-
-```java
-public class NumberFormatter {
-    private static final ThreadLocal<DecimalFormat> numberFormat = ThreadLocal.withInitial(() -> {
-        DecimalFormat numberFormat = new DecimalFormat();
-
-        numberFormat.setDecimalFormatSymbols(new DecimalFormatSymbols(Locale.GERMAN));
-        numberFormat.setMinimumFractionDigits(2);
-        numberFormat.setMaximumFractionDigits(2);
-        numberFormat.setGroupingUsed(false);
-
-        return numberFormat;
-    });
-
-    public static String format(double number) {
-        return numberFormat.get().format(number);
-    }
-}
-```
-
-Existing usage of `ThreadLocal` in our code base:
-
-```java
-public class CommonConfiguration extends AbstractConfiguration {
-    // We use EntityManager manually, but it's not threadsafe. Hence one per thread.
-    private ThreadLocal<EntityManager> _threadLocalEntityManager;
-
-    CommonConfiguration() {
-        // ...
-        _threadLocalEntityManager = ThreadLocal.withInitial(() -> getSessionFactory().createEntityManager());
-    }
-    //...
-}
-```
-
-## Custom thread pool
-
-Writing our own thread pool is a great way to learn about `wait` and `notify` primitives:
-
-```java
-public class FredPool {
-    private final Thread[] threads;
-    private final Deque<Runnable> tasks = new LinkedList<>();
-
-    public FredPool(int numThreads) {
-        // ...
-    }
-
-    public void shutdown() {
-        // ...
-    }
-
-    public void submit(Runnable task) {
-        // ...
-    }
-
-    public <V> Fuchur<V> submit(Callable<V> callable) {
-        // ...
-    }
-}
-```
 
 ## Diving deeper
 
