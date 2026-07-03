@@ -1,0 +1,748 @@
+# Agenda
+
+1. Threads
+   - `Thread` overview
+   - `State` transitions
+   - `start()` and `join()`
+2. Data parallelism
+   - Embarassingly parallel problems
+3. Pooling
+   - Executors
+   - Futures
+4. Synchronization
+   - `synchronized`
+   - `volatile`
+   - Atomic types
+   - Deadlocks
+   - Collections
+5. Diving deeper
+
+# Threads
+
+- Each thread has its own call stack
+
+![](img/debug.png)
+
+- JVM threads share one heap
+  - Shared, mutable state requires synchronization (more on that later)
+
+![](img/memory.svg)
+
+- JVM `Thread` objects are mapped to OS threads
+  - Scheduling of threads on cores is up to the OS
+
+## Compressed `java.lang.Thread` overview
+
+```java
+public class Thread implements Runnable {
+    // ...
+    public static Thread currentThread();
+
+    public StackTraceElement[] getStackTrace();
+
+    // ... LOTS of constructors ...
+    public Thread(Runnable target);
+
+    public void start();
+
+    public void join() throws InterruptedException;
+
+    public static void sleep(long millis) throws InterruptedException;
+
+    public void interrupt();
+
+    public boolean isInterrupted();
+}
+```
+
+## `java.lang.Thread.State` transitions
+
+![](img/thread-state.svg)
+
+## Starting and joining threads
+
+```java
+Runnable task = () -> {
+    // ... work to be done concurrently ...
+};
+Thread thread = new Thread(task);
+thread.start(); // start concurrent work
+
+// ... continue working in current thread ...
+
+thread.join();  // wait for concurrent work to finish
+```
+
+# Data parallelism
+
+## Motivating exercise
+
+- Open the `Sum` class and navigate to the `parallelLoop` method
+- Perform one of the 2 loops in another thread
+  - This is *not* as simple as it may seem at first glance!
+- Write down any questions or stumbling blocks that arise in the process
+  - Ask for help if you get stuck!
+- Is your solution as efficient as the `parallelStream` method?
+
+## Discussion
+
+- Split problem into parts and solve them in parallel
+  - Granularity of sub-problems?
+  - How many threads?
+
+![](img/parallelism.svg)
+
+- An optimization for multi-core processors
+  - Harder to implement than sequential version
+  - Slower on single-core processors!
+  - Multi-core processors entered the mainstream around 2006
+
+## Case study: Font scaling
+
+![](img/fox.png)
+
+```java
+Front[] fronts = new Front[13];
+fronts[12] = Front.read("/font.png");                              //  6    ms
+
+fronts[11] = fronts[12].thirdScaled(11).halfScaled().halfScaled(); // 63    ms
+fronts[10] = fronts[12].thirdScaled(5).halfScaled();               // 13    ms
+fronts[ 9] = fronts[12].scaled(3).halfScaled().halfScaled();       // 12    ms
+fronts[ 8] = fronts[12].thirdScaled(2);                            //  2    ms
+fronts[ 7] = fronts[12].thirdScaled(7).halfScaled().halfScaled();  // 25    ms
+fronts[ 6] = fronts[12].halfScaled();                              //   310 µs
+fronts[ 5] = fronts[10].halfScaled();                              //   210 µs
+fronts[ 4] = fronts[ 8].halfScaled();                              //   130 µs
+fronts[ 3] = fronts[ 6].halfScaled();                              //    75 µs
+fronts[ 2] = fronts[ 4].halfScaled();                              //    33 µs
+```
+
+- `fronts[11]` takes longer than all others combined
+  - Move to separate thread
+  - No gain in additional threads
+
+```java
+Thread eleven = new Thread(new Runnable() {
+    @Override
+    public void run() {
+        // 11 is the most expensive by a long shot
+        fronts[11] = fronts[12].thirdScaled(11).halfScaled().halfScaled();
+    }
+});
+eleven.start();
+fronts[10] = fronts[12].thirdScaled(5).halfScaled();
+fronts[ 9] = fronts[12].scaled(3).halfScaled().halfScaled();
+fronts[ 8] = fronts[12].thirdScaled(2);
+fronts[ 7] = fronts[12].thirdScaled(7).halfScaled().halfScaled();
+fronts[ 6] = fronts[12].halfScaled();
+fronts[ 5] = fronts[10].halfScaled();
+fronts[ 4] = fronts[ 8].halfScaled();
+fronts[ 3] = fronts[ 6].halfScaled();
+fronts[ 2] = fronts[ 4].halfScaled();
+eleven.join();
+```
+
+- About 200 µs overhead for
+  - `new Thread`
+  - `start`
+  - `join`
+
+## Embarassingly parallel problems
+
+- Determine number of cores n
+- Split problem into n *equal* parts
+- Execute sub-problems on n threads
+
+![](img/embarassing.svg)
+
+## Exercise
+
+- Open the `Mandelbrot` class and navigate to the `calculate` method
+- Split the calculation into multiple threads
+  - `Runtime.getRuntime().availableProcessors()`
+
+# Pooling
+
+- Re-use threads instead of creating new threads all the time
+
+![](img/thread-pool.svg)
+
+## Executors
+
+```java
+private ExecutorService single  = Executors.newSingleThreadExecutor();
+private ExecutorService fixed   = Executors.newFixedThreadPool(8);
+private ExecutorService cached  = Executors.newCachedThreadPool();
+
+/**
+ * Creates an Executor that starts a new virtual Thread for each task.
+ * The number of threads created by the Executor is unbounded.
+ * @since 21
+ */
+private ExecutorService virtual = Executors.newVirtualThreadPerTaskExecutor();
+
+// ...
+
+fixed.execute(myRunnable);
+
+// ...
+
+fixed.shutdown();
+```
+
+## Futures
+
+- `void ExecutorService.execute(Runnable command)` is fire-and-forget
+- `Future<T> ExecutorService.submit(Callable<T> task)` returns a `Future` than can be queried for the result later
+- `Future<?> ExecutorService.submit(Runnable task)` can at least be queried for completion
+
+```java
+private static final ExecutorService pool = Executors.newFixedThreadPool(2);
+
+private static int parallelLoop(int[] a) throws InterruptedException, ExecutionException {
+
+    Future<Integer> first  = pool.submit(split(a, 0,                PROBLEM_SIZE / 2));
+    Future<Integer> second = pool.submit(split(a, PROBLEM_SIZE / 2, PROBLEM_SIZE    ));
+
+    return first.get() + second.get();
+}
+
+private static Callable<Integer> split(int[] a, int fromInclusive, int toExclusive) {
+    return () -> {
+        int sum = 0;
+        for (int i = fromInclusive; i < toExclusive; ++i) {
+            sum += a[i];
+        }
+        return sum;
+    };
+}
+```
+
+## Case study: Labyrinth generation
+
+![](img/labyrinth.png)
+
+> Sometimes, due to "bad luck" with the random number generator, the labyrinth generation algorithm causes a noticeable pause.
+>
+> A practical fix is to run the algorithm multiple times in parallel and let the quickest execution "win".
+
+```java
+class LabyrinthGenerator implements Callable<Labyrinth> {
+    private static final int N = 16;
+
+    public static Labyrinth generate() {
+        var pool = Executors.newFixedThreadPool(N);
+        var service = new ExecutorCompletionService<Labyrinth>(pool);
+        for (int i = 0; i < N; ++i) {
+            service.submit(new LabyrinthGenerator());
+        }
+        Future<Labyrinth> future = service.take();
+        Labyrinth labyrinth = future.get();
+        pool.shutdownNow();
+        return labyrinth;
+    }
+
+    @Override
+    public Labyrinth call() {
+        // ...
+        if (Thread.currentThread().isInterrupted()) {
+            // some other generator found a result, abort
+        }
+        // ...
+    }
+}
+```
+
+Recent refactoring:
+
+```java
+class LabyrinthGenerator implements Callable<Labyrinth> {
+    private static final int N = 16;
+    private static final ExecutorService pool = Executors.newFixedThreadPool(N);
+
+    public static Labyrinth generate() {
+        List<LabyrinthGenerator> generators = Stream.generate(LabyrinthGenerator::new)
+                                                    .limit(N)
+                                                    .collect(Collectors.toList());
+        return pool.invokeAny(generators);
+    }
+
+    @Override
+    public Labyrinth call() {
+        // ...
+        if (Thread.currentThread().isInterrupted()) {
+            // some other generator found a result, abort
+        }
+        // ...
+    }
+}
+```
+
+## Completable Futures
+
+- A `Future` must be actively queried for completion (pull)
+- A `CompletableFuture` can trigger a callback on completion (push)
+
+```java
+// ...
+var future = client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+
+future.thenAccept(response -> {
+    // ...
+}).exceptionally(throwable -> {
+    // ...
+});
+```
+
+- Harder to write and debug than ordinary, synchronous code
+- No plans for `async`/`await` syntax sugar as in C# or JavaScript
+- [Virtual Threads](https://openjdk.org/jeps/444) made asynchronous APIs largely redundant
+
+```java
+Thread.startVirtualThread(() -> {
+    // ...
+    var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    // ...
+});
+```
+
+# Synchronization
+
+> Multicore processors are just now [May 2006] becoming inexpensive enough for midrange desktop systems.
+> Not coincidentally, many development teams are noticing more and more threading-related bug reports in their projects. [...]
+> **Most Java programs are so rife with concurrency bugs that they work only 'by accident'.** [JCIP]
+
+## Concurrency in frameworks
+
+> It would be nice to believe that concurrency is an 'optional' or 'advanced' language feature,
+> but the reality is that **nearly all Java applications are multithreaded**
+> and these frameworks do not insulate you from the need to properly coordinate access to application state. [JCIP]
+
+### Swing
+
+Can you see how the folling Swing example is broken?
+
+```java
+void main()
+{
+    JButton button = new JButton("Click me to see the current date!");
+    button.addActionListener(event -> {
+        button.setText(new Date().toString());
+    });
+
+    JFrame frame = new JFrame("Close me!");
+    frame.add(button);
+    frame.pack();
+    frame.setVisible(true);
+    frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+}
+```
+
+The UI is put together in the **main thread**, but Swing requires most UI-related actions to happen in the [event dispatch thread](https://docs.oracle.com/javase/tutorial/uiswing/concurrency/dispatch.html):
+
+```java
+void main()
+{
+    EventQueue.invokeLater(() ->
+    {
+        JButton button = new JButton("Click me to see the current date!");
+        button.addActionListener(event -> {
+            button.setText(new Date().toString());
+        });
+
+        JFrame frame = new JFrame("Close me!");
+        frame.add(button);
+        frame.pack();
+        frame.setVisible(true);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    });
+}
+```
+
+### Spring WebMVC
+
+Can you see how the following Spring example is broken?
+
+```java
+@RestController
+@RequestMapping("books")
+public class BookController {
+
+    private List<Book> books = new ArrayList<>();
+
+    public BookController() {
+        books.add(new Book("Effective Java", "Joshua Bloch", 2017));
+        books.add(new Book("Java Concurrency in Practice", "Brian Goetz", 2006));
+    }
+
+    @GetMapping
+    public Iterable<Book> getAllBooks() {
+        return books;
+    }
+
+    @GetMapping("{index}")
+    public Book getBookAt(@PathVariable("index") int index) {
+        return books.get(index);
+    }
+
+    @PostMapping
+    public Iterable<Book> addBook(@RequestBody Book newBook) {
+        books.add(newBook);
+        return books;
+    }
+}
+```
+
+Web requests are usually served by multiple threads, so **all** accesses to the list have to be synchronized:
+
+```java
+    @GetMapping
+    public Iterable<Book> getAllBooks() {
+        synchronized (books) {
+            return books;
+        }
+    }
+
+    @GetMapping("{index}")
+    public Book getBookAt(@PathVariable("index") int index) {
+        synchronized (books) {
+            return books.get(index);
+        }
+    }
+
+    @PostMapping
+    public Iterable<Book> addBook(@RequestBody Book newBook) {
+        synchronized (books) {
+            books.add(newBook);
+            return books;
+        }
+    }
+```
+
+> Whenever more than one thread accesses a given state variable, and **one of them might write** to it, they all must coordinate their access to it using synchronization.
+> You should avoid the temptation to think that there are 'special' situations in which this rule does not apply. [JCIP]
+
+## Goals of synchronization
+
+Synchronization achieves 2 goals:
+1. **Mutual exclusion:** Only one thread at a time can enter a synchronized block guarded by the same lock
+2. **Visibility:** Changes made by one thread become visible to another thread synchronizing on the same lock
+
+### Mutual exclusion
+
+```java
+public class UniqueIdGenerator {
+
+    private static long id = 0L;
+    
+    public static long next() {
+        return id++;
+    }
+}
+```
+
+What happens if two threads try to increment `id` at (roughly) the same time?
+
+![](img/race.svg)
+
+- Only one thread at a time can enter a synchronized block (or method) guarded by the same monitor
+
+### Visibility
+
+What happens if two threads try to increment `id` *after* one another?
+
+![](img/visibility.svg)
+
+Without proper synchronization, Thread #2 could read either a 1 or a 0. Why does this happen?
+
+1. `javac` optimizations
+2. HotSpot optimizations
+3. Instruction reordering
+4. Cache hierarchies
+
+```java
+public class UniqueIdGenerator {
+
+    private static long id = 0L;
+
+    public static long next() {
+        synchronized (UniqueIdGenerator.class) {
+            return id++;
+        }
+    }
+}
+```
+
+![](img/visibility-monitor.svg)
+
+- *All* writes in Thread #1 before a `monitorexit` become visible to Thread #2 after a `monitorenter` on the same monitor
+- The visibility is *not* affected by:
+  - The `monitorenter` in Thread #1
+  - The `monitorexit` in Thead #2
+
+## Synchronized methods
+
+- A `synchronized` method behaves like a method consisting of a `synchronized (this)` block
+  - Synchronizing on `this` allows clients to participate in the synchronization policy
+- A `static synchronized` method behaves like a `static` method consisting of a `synchronized (The.class)` block
+
+## Spin locks
+
+Can you see how the following program is broken?
+
+```java
+public class Spinner {
+
+    void main() {
+        new Thread(this::calculate).start();
+        this.spin();
+        this.print();
+    }
+
+    private int[] squares;
+    private boolean done;
+
+    private void calculate() {
+        squares = IntStream.range(0, 46341).map(x -> x * x).toArray();
+        System.out.println("Squares calculated!");
+        done = true;
+    }
+
+    private void spin() {
+        int spinning = 0;
+        while (!done) {
+            ++spinning;
+        }
+        System.out.println("Spinlock span " + spinning + " times!");
+    }
+
+    private void print() {
+        IntStream.of(squares).limit(11).forEach(System.out::println);
+    }
+}
+```
+
+- The write to `done` and the read from `done` happen in different threads without synchronization
+- It is impossible to predict whether or not the spinlock will ever terminate
+
+## volatile
+
+The simplest solution is to mark `done` with `volatile`:
+
+```java
+    private volatile boolean done;
+```
+
+![](img/visibility-volatile.svg)
+
+Writing to a `volatile` variable *v* from Thread #1
+and then reading from the same `volatile` variable *v* from Thread #2
+has the same visibility guarantees as leaving a synchronized block guarded by a monitor *m* in Thread #1
+and then entering a synchronized block guarded by the same monitor *m* in Thread #2.
+
+> A program that omits needed synchronization might appear to work, passing its tests and performing well for years, but it is still broken and may fail at any moment. [JCIP]
+
+## Atomic types
+
+```java
+public class UniqueIdGenerator {
+
+    private static long id = 0L;
+
+    public static long next() {
+        synchronized (UniqueIdGenerator.class) {
+            return id++;
+        }
+    }
+}
+```
+
+Synchronized access to a `long` variable can be replaced with an `AtomicLong`:
+
+```java
+import java.util.concurrent.atomic.AtomicLong;
+
+public class UniqueIdGenerator {
+
+    private static AtomicLong id = new AtomicLong(0L);
+
+    public static long next() {
+        return id.getAndIncrement();
+    }
+}
+```
+
+- Implemented with special hardware instructions
+  - No locking required
+  - Usually faster than `synchronized`
+- Other popular atomic types:
+  - `AtomicInteger`
+  - `AtomicBoolean`
+  - `AtomicReference`
+
+## Deadlocks
+
+- Classic deadlock scenario:
+  - Thread A acquires lock 1
+  - Thread B acquires lock 2
+  - Thread A waits for lock 2
+  - Thread B waits for lock 1
+  - Program hangs forever
+  - see `Philosopher.java`
+- How do we prevent deadlocks?
+  - globally consistent lock acquisition order
+
+> ### Multithreaded toolkits: A failed dream? (2004)
+>
+> From observation, there seems to be an amazing tendency  
+> towards deadlocks and race conditions in multithreaded GUIs.
+>
+> It seems like the obvious right thing to do in a multithreaded environment:  
+> Any random thread should be able to update the GUI state of buttons, text fields, etc.  
+> It's just a matter of having a few locks, what can be so hard?
+
+## Collections
+
+### Synchronized collections
+
+- Vintage collections
+  - `java.util.Vector`
+  - `java.util.Hashtable`
+- `Collections.synchronizedXyz`, popular variants:
+  - `synchronizedCollection`
+  - `synchronizedList`
+  - `synchronizedSet`
+  - `synchronizedMap`
+
+Note that `synchronizedList` cannot be used in our `BookController` example, because Jackson iteration is out of our control:
+
+> It is imperative that the user manually synchronize on the returned list when traversing it via Iterator.
+> Failure to follow this advice may result in non-deterministic behavior.
+
+### Copy-on-write collections
+
+- `CopyOnWriteArrayList`
+- `CopyOnWriteArraySet`
+
+*live coding*
+
+Probably not the right choice for our use case, unless book additions are rare:
+
+> A thread-safe variant of `ArrayList` in which all mutative operations are implemented by making a fresh copy of the underlying array.
+>
+> This is ordinarily too costly, but may be more efficient than alternatives when traversal operations vastly outnumber mutations,
+> and is useful when you cannot or don't want to synchronize traversals, yet need to preclude interference among concurrent threads.
+
+### Persistent collections
+
+- (No relationship to databases)
+- Modern alternative to copy-on-write collections
+- Fully immutable (readers *never* block!)
+- Efficient functional "updates"
+- Shallow trees
+- Pioneered by `clojure.lang.PersistentVector` in 2007
+
+```clojure
+(ns bookstore.handler
+  (:require [clojure.spec.alpha :as s]
+            [compojure.core :refer :all]
+            [compojure.route :as route]
+            [ring.middleware.json :refer [wrap-json-response wrap-json-body]]
+            [ring.util.response :refer [response]]))
+
+(s/check-asserts true)
+
+(s/def ::title string?)
+(s/def ::author string?)
+(s/def ::year int?)
+(s/def ::book
+  (s/keys :req-un [::title ::author ::year]))
+
+(def books
+  (atom
+    [{:title "Effective Java"
+      :author "Joshua Bloch"
+      :year 2017}
+     {:title "Java Concurrency in Practice"
+      :author "Brian Goetz"
+      :year 2006}]))
+
+(run! #(s/assert ::book %) @books)
+
+(defroutes api-routes
+  (GET "/" []
+    (response @books))
+
+  (GET "/:index" [index :<< Integer/parseInt]
+    (response (@books index)))
+
+  (POST "/" {book :body}
+    (s/assert ::book book)
+    (response (swap! books conj book)))
+
+  (route/not-found "Not found"))
+
+(def app
+  (-> api-routes
+    (wrap-json-body {:keywords? true})
+    (wrap-json-response {:pretty true})))
+```
+
+- Adopted into numerous Java libraries, e.g. `io.vavr.collection.Vector<T>`
+
+*live coding*
+
+### Concurrent collections
+
+- `ConcurrentHashMap`
+- `ConcurrentLinkedQueue`
+- `ConcurrentLinkedDeque`
+- `ConcurrentSkipListMap`
+- `ConcurrentSkipListSet`
+
+`ConcurrentHashMap` introduced 2 interesting operations which were adopted by `Map`:
+
+```java
+/**
+ * @return the previous value associated with the specified key,
+ * or null if there was no mapping for the key
+ */
+default V putIfAbsent(K key, V value) {
+    V v = get(key);
+    if (v == null) {
+        v = put(key, value);
+    }
+    return v;
+}
+
+/**
+ * @return the current (existing or computed) value associated with the specified key,
+ * or null if the computed value is null
+ */
+default V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
+    Objects.requireNonNull(mappingFunction);
+    V v;
+    if ((v = get(key)) == null) {
+        V newValue;
+        if ((newValue = mappingFunction.apply(key)) != null) {
+            put(key, newValue);
+            return newValue;
+        }
+    }
+    return v;
+}
+```
+
+### Exercise
+
+- Open the `MobyDick` class and study the `main` method
+- Count the frequencies of words
+- Can you increase the performance with parallel streams?
+
+# Diving deeper
+
+- 📖 [Brian Goetz – Java Concurrency in Practice](https://jcip.net)
+- 📺 [Jeremy Manson – The Java Memory Model](https://www.youtube.com/watch?v=WTVooKLLVT8)
+- 📺 [Cay Horstmann – Concurrency for Humans](https://www.youtube.com/watch?v=Zm3OgyQfDTU)
+- 📺 [Douglas Hawkins – Concurrency Concepts in Java](https://www.youtube.com/watch?v=ADxUsCkWdbE)
+- 📺 [Brian Goetz – Thinking in Parallel](https://www.youtube.com/watch?v=2nup6Oizpcw&t=1545)
