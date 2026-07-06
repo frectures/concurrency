@@ -735,9 +735,12 @@ default V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunctio
 
 ### Exercise
 
-- Open the `MobyDick` class and study the `main` method
-- Count the frequencies of words
-- Can you increase the performance with parallel streams?
+- Run the `MobyDick` benchmark class
+  - Note the performance differences
+- Finish the implementation of `MobyDick.concurrentHashMap()`
+  - Is it faster?
+- Work through the TODOs in `MobyDick.fredSet()`
+  - Is it faster still?
 
 # Diving deeper
 
