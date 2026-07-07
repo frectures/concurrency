@@ -9,7 +9,17 @@
 
 <body>
 
-<h1>Study developer console! (F12)</h1>
+<h2>Click one button, and wait!</h2>
+
+<div style="margin-block: 1em">
+    <button onclick="demonstrateConcurrency()">demonstrate concurrency</button>
+    <button onclick="demonstrateDataRace()">demonstrate data race</button>
+    <button onclick="postRandomBooks()">post random books</button>
+</div>
+
+<div style="display: flex">
+    <textarea id="output" style="flex: 0px" rows="50"></textarea>
+</div>
 
 </body>
 </html>

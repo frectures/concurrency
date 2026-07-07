@@ -1,3 +1,11 @@
+## Motivation
+
+- Start `src/main/java/backend/DemoApplication.java`
+- Browse `http://localhost:8080`
+- Click first button
+- Click second button
+- Discuss
+
 # Agenda
 
 1. Threads
@@ -20,9 +28,6 @@
 # Threads
 
 - Each thread has its own call stack
-
-![](img/debug.png)
-
 - JVM threads share one heap
   - Shared, mutable state requires synchronization (more on that later)
 
