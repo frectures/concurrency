@@ -308,9 +308,9 @@ Thread.startVirtualThread(() -> {
 
 # Synchronization
 
-> Multicore processors are just now [May 2006] becoming inexpensive enough for midrange desktop systems.
+> **Multicore processors** are just now [May 2006] becoming inexpensive enough for midrange desktop systems.
 > Not coincidentally, many development teams are noticing more and more threading-related bug reports in their projects. [...]
-> **Most Java programs are so rife with concurrency bugs that they work only 'by accident'.** [JCIP]
+> Most Java programs are so rife with **concurrency bugs** that they work only 'by accident'. [JCIP]
 
 ## Concurrency in frameworks
 
@@ -320,15 +320,13 @@ Thread.startVirtualThread(() -> {
 
 ### Swing
 
-Can you see how the folling Swing example is broken?
+Can you see how the following Swing example is broken?
 
 ```java
 void main()
 {
     JButton button = new JButton("Click me to see the current date!");
-    button.addActionListener(event -> {
-        button.setText(new Date().toString());
-    });
+    button.addActionListener(event -> button.setText(new Date().toString()));
 
     JFrame frame = new JFrame("Close me!");
     frame.add(button);
@@ -346,9 +344,7 @@ void main()
     EventQueue.invokeLater(() ->
     {
         JButton button = new JButton("Click me to see the current date!");
-        button.addActionListener(event -> {
-            button.setText(new Date().toString());
-        });
+        button.addActionListener(event -> button.setText(new Date().toString()));
 
         JFrame frame = new JFrame("Close me!");
         frame.add(button);
@@ -358,6 +354,9 @@ void main()
     });
 }
 ```
+
+> Most **Swing** object methods are **not thread-safe**: Invoking them from multiple threads risks thread interference or memory consistency errors.  
+> Programs that ignore this rule may function correctly most of the time, but are subject to **unpredictable errors** that are difficult to reproduce.
 
 ### Spring WebMVC
 
