@@ -424,7 +424,42 @@ Web requests are usually served by multiple threads, so **all** accesses to the 
 ```
 
 > Whenever more than one thread accesses a given state variable, and **one of them might write** to it, they all must coordinate their access to it using synchronization.
-> You should avoid the temptation to think that there are 'special' situations in which this rule does not apply. [JCIP]
+> You should avoid the temptation to think that there are **special situations** in which this rule does not apply. [JCIP]
+
+### A special situation
+
+```java
+/**
+ * Strings are constant; their values cannot be changed after they are created.
+ * Because String objects are immutable, they can be shared.
+ */
+public final class String
+{
+    private final char[] value;
+
+    private       int    hash;
+
+    // ...
+
+    public int hashCode()
+    {
+        // The hash field is subject to a benign data race.
+        // A necessary restriction to allow this to be correct
+        // without explicit concurrency primitives is that
+        // the computation is idempotent and derived from immutable state.
+        int h = hash;
+        if (h == 0)
+        {
+            for (int i = 0; i < value.length; ++i)
+            {
+                h = h * 31 + value.charAt(i);
+            }
+            hash = h;
+        }
+        return h;
+    }
+}
+```
 
 ## Goals of synchronization
 
