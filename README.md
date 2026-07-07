@@ -365,7 +365,7 @@ Can you see how the following Spring example is broken?
 
 ```java
 @RestController
-@RequestMapping("books")
+@RequestMapping("/books")
 public class BookController {
 
     private List<Book> books = new ArrayList<>();
@@ -380,7 +380,7 @@ public class BookController {
         return books;
     }
 
-    @GetMapping("{index}")
+    @GetMapping("/{index}")
     public Book getBookAt(@PathVariable("index") int index) {
         return books.get(index);
     }
@@ -399,11 +399,13 @@ Web requests are usually served by multiple threads, so **all** accesses to the 
     @GetMapping
     public Iterable<Book> getAllBooks() {
         synchronized (books) {
-            return books;
+            return new ArrayList<>(books);
+            // defensive copy is necessary, because books List could change
+            // while Jackson iterates (unsynchronized!) over returned List
         }
     }
 
-    @GetMapping("{index}")
+    @GetMapping("/{index}")
     public Book getBookAt(@PathVariable("index") int index) {
         synchronized (books) {
             return books.get(index);
@@ -414,7 +416,9 @@ Web requests are usually served by multiple threads, so **all** accesses to the 
     public Iterable<Book> addBook(@RequestBody Book newBook) {
         synchronized (books) {
             books.add(newBook);
-            return books;
+            return new ArrayList<>(books);
+            // defensive copy is necessary, because books List could change
+            // while Jackson iterates (unsynchronized!) over returned List
         }
     }
 ```
