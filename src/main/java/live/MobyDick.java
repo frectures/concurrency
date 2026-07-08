@@ -90,13 +90,29 @@ public class MobyDick {
                 .flatMap(line -> WORDS.matcher(line).results())
                 .map(MatchResult::group)
                 .map(String::toLowerCase)
+                // creates and merges many HashSets
                 .collect(Collectors.toSet());
 
         return checkSize(vocabulary);
     }
 
     @Benchmark
-    public Set<String> concurrentHashMap() {
+    public Set<String> concurrentCollect() {
+
+        Set<String> vocabulary = mobyLines.stream()
+                .parallel()
+                .flatMap(line -> WORDS.matcher(line).results())
+                .map(MatchResult::group)
+                .map(String::toLowerCase)
+                // creates 1 single ConcurrentHashMap
+                .collect(Collectors.toConcurrentMap(word -> word, _ -> "", (_, _) -> ""))
+                .keySet();
+
+        return checkSize(vocabulary);
+    }
+
+    @Benchmark
+    public Set<String> concurrentForEach() {
 
         // - ConcurrentHashSet does not exist
         // - ConcurrentHashMap exists
@@ -109,7 +125,7 @@ public class MobyDick {
     }
 
     @Benchmark
-    public FredSet fredSet() {
+    public FredSet fredSetForEach() {
 
         var vocabulary = new FredSet();
 

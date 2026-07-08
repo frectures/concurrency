@@ -780,9 +780,9 @@ default V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunctio
 
 - Run the `MobyDick` benchmark class
   - Note the performance differences
-- Finish the implementation of `MobyDick.concurrentHashMap()`
+- Finish the implementation of `MobyDick.concurrentForEach()`
   - Is it faster?
-- Work through the TODOs in `MobyDick.fredSet()`
+- Work through the TODOs in `MobyDick.fredSetForEach()`
   - Is it faster still?
 
 # Diving deeper
